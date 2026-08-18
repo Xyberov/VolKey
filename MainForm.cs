@@ -9,6 +9,7 @@ internal sealed class MainForm : Form
     private readonly Action _exitApplication;
     private readonly CheckBox _enabledCheckBox = new();
     private readonly CheckBox _autostartCheckBox = new();
+    private readonly CheckBox _restoreVolumeCheckBox = new();
     private readonly NumericUpDown _timeoutInput = new();
     private readonly Label _statusLabel = new();
     private readonly NotifyIcon _trayIcon;
@@ -29,7 +30,7 @@ internal sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
-        ClientSize = new Size(470, 330);
+        ClientSize = new Size(470, 370);
         Font = new Font("Segoe UI", 10F);
 
         var heading = new Label { Text = "VolKey", Font = new Font("Segoe UI", 20F, FontStyle.Bold), AutoSize = true, Location = new Point(25, 20) };
@@ -64,12 +65,23 @@ internal sealed class MainForm : Form
             _saveSettings();
         };
 
-        var timeoutLabel = new Label { Text = "Пауза между нажатиями (мс):", AutoSize = true, Location = new Point(28, 215) };
+        _restoreVolumeCheckBox.Text = "Возвращать громкость после жеста";
+        _restoreVolumeCheckBox.AutoSize = true;
+        _restoreVolumeCheckBox.Location = new Point(28, 210);
+        _restoreVolumeCheckBox.Checked = Settings.RestoreVolumeAfterGesture;
+        _restoreVolumeCheckBox.CheckedChanged += (_, _) =>
+        {
+            if (_isInitializing) return;
+            Settings.RestoreVolumeAfterGesture = _restoreVolumeCheckBox.Checked;
+            _saveSettings();
+        };
+
+        var timeoutLabel = new Label { Text = "Пауза между нажатиями (мс):", AutoSize = true, Location = new Point(28, 250) };
         _timeoutInput.Minimum = 250;
         _timeoutInput.Maximum = 1500;
         _timeoutInput.Increment = 50;
         _timeoutInput.Value = Settings.GestureTimeoutMs;
-        _timeoutInput.Location = new Point(270, 210);
+        _timeoutInput.Location = new Point(270, 245);
         _timeoutInput.Width = 90;
         _timeoutInput.ValueChanged += (_, _) =>
         {
@@ -82,12 +94,12 @@ internal sealed class MainForm : Form
             Text = "+  −  +  — следующий трек\n−  +  −  — предыдущий трек",
             AutoSize = true,
             ForeColor = Color.DimGray,
-            Location = new Point(28, 255)
+            Location = new Point(28, 290)
         };
-        var exitButton = new Button { Text = "Выйти из программы", Size = new Size(155, 34), Location = new Point(285, 275) };
+        var exitButton = new Button { Text = "Выйти из программы", Size = new Size(155, 34), Location = new Point(285, 315) };
         exitButton.Click += (_, _) => ExitFromButton();
 
-        Controls.AddRange([heading, description, _enabledCheckBox, _statusLabel, _autostartCheckBox, timeoutLabel, _timeoutInput, help, exitButton]);
+        Controls.AddRange([heading, description, _enabledCheckBox, _statusLabel, _autostartCheckBox, _restoreVolumeCheckBox, timeoutLabel, _timeoutInput, help, exitButton]);
 
         var menu = new ContextMenuStrip();
         var toggleItem = new ToolStripMenuItem("Включить / выключить", null, (_, _) => _toggleEnabled());

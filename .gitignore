@@ -1,4 +1,5 @@
 bin/
 obj/
 .vs/
+.dotnet-cli/
 *.user

@@ -9,6 +9,7 @@ internal sealed class GestureRecognizer : IDisposable
     private readonly System.Windows.Forms.Timer _timer = new();
     public int TimeoutMs { get => _timer.Interval; set => _timer.Interval = value; }
     public event EventHandler<MediaCommand>? GestureRecognized;
+    public event EventHandler? GestureFinished;
 
     public GestureRecognizer(int timeoutMs)
     {
@@ -28,8 +29,11 @@ internal sealed class GestureRecognizer : IDisposable
                 [VolumeKey.Down, VolumeKey.Up, VolumeKey.Down] => MediaCommand.Previous,
                 _ => (MediaCommand?)null
             };
-            Reset();
-            if (command.HasValue) GestureRecognized?.Invoke(this, command.Value);
+            _timer.Stop();
+            _keys.Clear();
+            if (command.HasValue)
+                GestureRecognized?.Invoke(this, command.Value);
+            GestureFinished?.Invoke(this, EventArgs.Empty);
             return;
         }
         _timer.Start();
@@ -39,6 +43,7 @@ internal sealed class GestureRecognizer : IDisposable
     {
         _timer.Stop();
         _keys.Clear();
+        GestureFinished?.Invoke(this, EventArgs.Empty);
     }
 
     public void Dispose() => _timer.Dispose();
