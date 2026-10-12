@@ -78,21 +78,6 @@ Settings are stored in `%LOCALAPPDATA%\VolKey\settings.json`.
 
 > Closing the window doesn't quit VolKey — it keeps running in the background. To quit completely, choose **Quit** in the tray icon menu or **Quit VolKey** in the window.
 
-## Development
-
-You need Windows and [Visual Studio](https://visualstudio.microsoft.com/) with the **.NET desktop development** workload (or the .NET 8 SDK).
-
-1. Clone the repository.
-2. Open `VolKey.sln` and press `F5`. VolKey appears in the system tray.
-
-Tests for the gesture and settings logic:
-
-```powershell
-dotnet test
-```
-
-GitHub Actions builds the project and runs the tests on every push to `main`.
-
 ## Releasing
 
 1. Bump `Version` in `VolKey.csproj` and commit.
@@ -104,17 +89,6 @@ GitHub Actions builds the project and runs the tests on every push to `main`.
    ```
 
 GitHub Actions runs the tests, builds the portable exe and the installer, and publishes the release. The app version comes from the tag.
-
-### Building manually
-
-1. Build a single self-contained exe:
-
-   ```powershell
-   dotnet publish VolKey.csproj -c Release -p:PublishProfile=Installer
-   ```
-
-   The result goes to `publish\`.
-2. Open `VolKeySetup.iss` in [Inno Setup](https://jrsoftware.org/isinfo.php) and click **Compile**. The installer goes to `Output\`.
 
 ## Project structure
 
