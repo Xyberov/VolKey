@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>VolKey</AssemblyName>
     <RootNamespace>VolKey</RootNamespace>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Product>VolKey</Product>
     <Company>Xyberov</Company>
     <ApplicationIcon>Assets\VolKey.ico</ApplicationIcon>

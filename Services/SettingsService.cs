@@ -11,7 +11,8 @@ internal sealed class SettingsService
         Converters =
         {
             new LenientEnumConverter<GestureAction>((GestureAction)(-1)),
-            new LenientEnumConverter<UiLanguage>(UiLanguage.System)
+            new LenientEnumConverter<UiLanguage>(UiLanguage.System),
+            new LenientEnumConverter<UiTheme>(UiTheme.System)
         }
     };
 

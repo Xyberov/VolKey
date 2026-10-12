@@ -12,10 +12,11 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
     private readonly OsdWindow _osd = new();
     private readonly GestureRecognizer _gestureRecognizer;
     private readonly GestureRecorder _gestureRecorder = new();
-    private readonly MainForm _mainForm;
+    private MainForm _mainForm;
     private readonly SynchronizationContext _uiContext;
     private readonly ShowWindowSignal _showWindowSignal;
     private int _osdVersion;
+    private UiTheme _appliedTheme;
 
     public VolKeyApplicationContext(bool startMinimized)
     {
@@ -23,9 +24,10 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
         settings.StartWithWindows = _autoStartService.IsEnabled();
         _autoStartService.UpgradeCommand();
         Strings.SetLanguage(settings.Language);
+        ApplyColorMode(settings.Theme);
 
         _gestureRecorder.Recorded += (_, e) => RestoreAfterPresses(e.VolumeBefore?.Level, e.VolumeBefore?.Muted);
-        _mainForm = new MainForm(settings, _gestureRecorder, _mediaSessionService, ToggleEnabled, ApplySettings, ExitApplication);
+        _mainForm = CreateMainForm(settings);
         _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         _gestureRecognizer = new GestureRecognizer(settings.GestureTimeoutMs, settings.Gestures);
@@ -147,6 +149,38 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
             _autoStartService.SetEnabled(settings.StartWithWindows);
         _gestureRecognizer.TimeoutMs = settings.GestureTimeoutMs;
         _gestureRecognizer.SetGestures(settings.Gestures);
+        // Окно перестраиваем после выхода из обработчика его же выпадающего списка.
+        if (settings.Theme != _appliedTheme)
+            _uiContext.Post(_ => RecreateMainForm(), null);
+    }
+
+    private MainForm CreateMainForm(AppSettings settings) =>
+        new(settings, _gestureRecorder, _mediaSessionService, ToggleEnabled, ApplySettings, ExitApplication);
+
+    /// <summary>
+    /// Тема применяется к окнам при их создании, поэтому после её смены окно настроек
+    /// создаётся заново на том же месте. Плашка берёт цвета темы при каждой отрисовке.
+    /// </summary>
+    private void RecreateMainForm()
+    {
+        var oldForm = _mainForm;
+        var wasVisible = oldForm.Visible;
+        var location = oldForm.Location;
+        ApplyColorMode(oldForm.Settings.Theme);
+        oldForm.Dispose();
+        _mainForm = CreateMainForm(oldForm.Settings);
+        if (wasVisible) _mainForm.ShowWindow(location);
+    }
+
+    private void ApplyColorMode(UiTheme theme)
+    {
+        Application.SetColorMode(theme switch
+        {
+            UiTheme.Light => SystemColorMode.Classic,
+            UiTheme.Dark => SystemColorMode.Dark,
+            _ => SystemColorMode.System
+        });
+        _appliedTheme = theme;
     }
 
     private static void RunAfter(int delayMs, Action action)

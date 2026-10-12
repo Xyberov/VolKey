@@ -45,6 +45,18 @@ public class SettingsServiceTests
         Assert.Equal(700, settings.GestureTimeoutMs);
     }
 
+    [Theory]
+    [InlineData("\"Dark\"", "Dark")]
+    [InlineData("\"Light\"", "Light")]
+    [InlineData("\"Neon\"", "System")]
+    public void ReadsThemeLeniently(string json, string expected)
+    {
+        var settings = SettingsService.Parse($$"""{ "Theme": {{json}}, "Language": "English" }""");
+
+        Assert.Equal(expected, settings.Theme.ToString());
+        Assert.Equal(UiLanguage.English, settings.Language);
+    }
+
     [Fact]
     public void BrokenJsonFallsBackToDefaults()
     {

@@ -34,6 +34,15 @@ internal static class Strings
         _ => T("Как в системе", "System default")
     };
 
+    public static string Theme => T("Тема:", "Theme:");
+
+    public static string ThemeName(UiTheme theme) => theme switch
+    {
+        UiTheme.Light => T("Светлая", "Light"),
+        UiTheme.Dark => T("Тёмная", "Dark"),
+        _ => T("Как в системе", "System default")
+    };
+
     public static string Gestures => T("Жесты", "Gestures");
     public static string NoGestures => T("Жестов нет — добавьте первый.", "No gestures yet — add one.");
     public static string AddGesture => T("Добавить жест", "Add gesture");

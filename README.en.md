@@ -62,7 +62,7 @@ Single presses change the volume as usual, and holding a key counts as one press
 - Tray icon: click to open the settings; the menu lists your gestures, toggles them and quits. The icon's tooltip shows the current track, and the icon turns grey when gestures are off.
 - Starts with Windows quietly, without showing the window.
 - Launching it again doesn't start a second copy — it opens the window of the running one.
-- Light and dark theme, following Windows.
+- Light and dark theme: following Windows or your choice.
 - Russian and English interface.
 
 ## Settings
@@ -76,6 +76,7 @@ Single presses change the volume as usual, and holding a key counts as one press
 | **Ignore gestures in full-screen games and videos** | While a full-screen app is open, gestures are ignored and the keys just change the volume. |
 | **Max pause between presses** | How long you can wait between neighbouring presses: 250–1500 ms, 550 ms by default. |
 | **Language** | System default, Russian or English. Switches instantly. |
+| **Theme** | System default, light or dark. Switches instantly. |
 | **Gestures** | A "combination → action" table: add, record with the keys, edit, remove or restore defaults. |
 
 Settings are stored in `%LOCALAPPDATA%\VolKey\settings.json`.

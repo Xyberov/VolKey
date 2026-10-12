@@ -23,6 +23,8 @@ internal sealed class MainForm : Form
     private readonly NumericUpDown _timeoutInput = new();
     private readonly Label _languageLabel = new() { AutoSize = true };
     private readonly ComboBox _languageBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly Label _themeLabel = new() { AutoSize = true };
+    private readonly ComboBox _themeBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Label _gesturesHeading = new() { AutoSize = true };
     private readonly TableLayoutPanel _gesturesTable = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 5 };
     private readonly Button _addGestureButton = new() { AutoSize = true };
@@ -119,7 +121,19 @@ internal sealed class MainForm : Form
         _languageBox.SelectionChangeCommitted += (_, _) => ChangeLanguage(((LanguageItem)_languageBox.SelectedItem!).Language);
         _languageLabel.Margin = new Padding(Dpi(3), Dpi(6), Dpi(6), 0);
         var languageRow = Row(_languageLabel, _languageBox);
-        languageRow.Margin = new Padding(0, Dpi(2), 0, Dpi(12));
+        languageRow.Margin = new Padding(0, Dpi(2), 0, Dpi(2));
+
+        _themeBox.Width = Dpi(150);
+        _themeBox.SelectionChangeCommitted += (_, _) =>
+        {
+            Settings.Theme = ((ThemeItem)_themeBox.SelectedItem!).Theme;
+            _applySettings();
+        };
+        _themeLabel.Margin = new Padding(Dpi(3), Dpi(6), Dpi(6), 0);
+        var themeRow = Row(_themeLabel, _themeBox);
+        themeRow.Margin = new Padding(0, Dpi(2), 0, Dpi(12));
+        // Подписи разной длины — выравниваем выпадающие списки по одной линии.
+        _languageLabel.AutoSize = _themeLabel.AutoSize = false;
 
         _gesturesHeading.Font = new Font(Font, FontStyle.Bold);
         _gesturesHeading.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(4));
@@ -145,7 +159,7 @@ internal sealed class MainForm : Form
         buttonsRow.Anchor = AnchorStyles.Right;
 
         layout.Controls.AddRange([titleRow, _descriptionLabel, _statusLabel, _enabledCheckBox, _autostartCheckBox,
-            _restoreVolumeCheckBox, _notificationsCheckBox, _fullscreenCheckBox, timeoutRow, languageRow, _gesturesHeading, _gesturesTable,
+            _restoreVolumeCheckBox, _notificationsCheckBox, _fullscreenCheckBox, timeoutRow, languageRow, themeRow, _gesturesHeading, _gesturesTable,
             gestureButtonsRow, _gestureMessage, _gestureHint, gesturesSpacer, buttonsRow]);
         Controls.Add(layout);
         CancelButton = _hideButton;
@@ -185,8 +199,14 @@ internal sealed class MainForm : Form
         _trayIcon.Text = Strings.TrayTooltip(Settings.Enabled);
     }
 
-    public void ShowWindow()
+    /// <param name="location">Где показать окно; по умолчанию — там, где оно было (впервые — по центру экрана).</param>
+    public void ShowWindow(Point? location = null)
     {
+        if (location is { } point)
+        {
+            StartPosition = FormStartPosition.Manual;
+            Location = point;
+        }
         Show();
         WindowState = FormWindowState.Normal;
         Activate();
@@ -242,6 +262,9 @@ internal sealed class MainForm : Form
         _fullscreenCheckBox.Text = Strings.IgnoreInFullscreen;
         _timeoutLabel.Text = Strings.MaxPause;
         _languageLabel.Text = Strings.Language;
+        _themeLabel.Text = Strings.Theme;
+        var labelWidth = Math.Max(TextRenderer.MeasureText(Strings.Language, Font).Width, TextRenderer.MeasureText(Strings.Theme, Font).Width);
+        _languageLabel.Size = _themeLabel.Size = new Size(labelWidth, _timeoutLabel.PreferredHeight);
         _gesturesHeading.Text = Strings.Gestures;
         _addGestureButton.Text = Strings.AddGesture;
         _resetGesturesLink.Text = Strings.ResetGestures;
@@ -255,6 +278,9 @@ internal sealed class MainForm : Form
         _languageBox.Items.Clear();
         _languageBox.Items.AddRange(Enum.GetValues<UiLanguage>().Select(language => new LanguageItem(language)).ToArray<object>());
         _languageBox.SelectedIndex = (int)Settings.Language;
+        _themeBox.Items.Clear();
+        _themeBox.Items.AddRange(Enum.GetValues<UiTheme>().Select(theme => new ThemeItem(theme)).ToArray<object>());
+        _themeBox.SelectedIndex = (int)Settings.Theme;
 
         RefreshState();
         RebuildGestureRows();
@@ -519,6 +545,11 @@ internal sealed class MainForm : Form
     private sealed record ActionItem(GestureAction Action)
     {
         public override string ToString() => Strings.Action(Action);
+    }
+
+    private sealed record ThemeItem(UiTheme Theme)
+    {
+        public override string ToString() => Strings.ThemeName(Theme);
     }
 
     private sealed record LanguageItem(UiLanguage Language)
