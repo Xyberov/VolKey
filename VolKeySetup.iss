@@ -40,7 +40,7 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Дополнительные ярлыки:"; Flags: checkedonce
 
 [Files]
-; Сначала соберите exe: dotnet publish -c Release -p:PublishProfile=Installer
+; Сначала соберите exe: dotnet publish VolKey.csproj -c Release -p:PublishProfile=Installer
 Source: "publish\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

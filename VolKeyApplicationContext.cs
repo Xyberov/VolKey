@@ -22,7 +22,7 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
         _mainForm = new MainForm(settings, ToggleEnabled, ApplySettings, ExitApplication);
         _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
-        _gestureRecognizer = new GestureRecognizer(settings.GestureTimeoutMs);
+        _gestureRecognizer = new GestureRecognizer(settings.GestureTimeoutMs, settings.Gestures);
         _gestureRecognizer.GestureRecognized += OnGestureRecognized;
         _keyboardHook.VolumeKeyPressed += OnVolumeKeyPressed;
         _keyboardHook.Start();
@@ -37,23 +37,38 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
 
         // Хук получает кнопку раньше, чем Windows изменяет громкость, поэтому уровень читаем здесь.
         // Всё остальное (отправку медиаклавиш, уведомления) выполняем уже после выхода из хука.
-        VolumeState? volumeBefore = _mainForm.Settings.RestoreVolumeAfterGesture &&
-            _audioVolumeService.TryGetState(out var state) ? state : null;
+        VolumeState? volumeBefore = _audioVolumeService.TryGetState(out var state) ? state : null;
         _uiContext.Post(_ => _gestureRecognizer.Register(key, volumeBefore), null);
     }
 
     private void OnGestureRecognized(object? sender, GestureRecognizedEventArgs e)
     {
-        MediaController.Send(e.Command);
-        if (e.VolumeBefore is { } volume)
+        var settings = _mainForm.Settings;
+        MediaController.TrySend(e.Action);
+
+        var restore = settings.RestoreVolumeAfterGesture;
+        float? level = restore ? e.VolumeBefore?.Level : null;
+        bool? muted = restore ? e.VolumeBefore?.Muted : null;
+        if (e.Action == GestureAction.ToggleMute)
         {
-            // Даём системе закончить обработку всех трёх нажатий и возвращаем уровень.
-            // Повтор страхует от случаев, когда Windows применила последнее нажатие с опозданием.
-            RunAfter(80, () => _audioVolumeService.Restore(volume));
-            RunAfter(250, () => _audioVolumeService.Restore(volume));
+            // Сами нажатия «Громкость +» снимают режим без звука, поэтому отталкиваемся от состояния до жеста.
+            var before = e.VolumeBefore ?? (_audioVolumeService.TryGetState(out var current) ? current : null);
+            muted = before.HasValue ? !before.Value.Muted : null;
         }
-        if (_mainForm.Settings.ShowNotifications)
-            _mainForm.ShowNotification(e.Command == MediaCommand.Next ? "Следующий трек" : "Предыдущий трек");
+        if (level.HasValue || muted.HasValue)
+        {
+            // Даём системе закончить обработку нажатий жеста и возвращаем уровень.
+            // Повтор страхует от случаев, когда Windows применила последнее нажатие с опозданием.
+            RunAfter(80, () => _audioVolumeService.Apply(level, muted));
+            RunAfter(250, () => _audioVolumeService.Apply(level, muted));
+        }
+
+        if (settings.ShowNotifications)
+        {
+            _mainForm.ShowNotification(e.Action == GestureAction.ToggleMute && muted.HasValue
+                ? muted.Value ? "Звук выключен" : "Звук включён"
+                : GestureActions.DisplayName(e.Action));
+        }
     }
 
     private void ToggleEnabled()
@@ -70,7 +85,7 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
         if (settings.StartWithWindows != _autoStartService.IsEnabled())
             _autoStartService.SetEnabled(settings.StartWithWindows);
         _gestureRecognizer.TimeoutMs = settings.GestureTimeoutMs;
-        if (!settings.Enabled) _gestureRecognizer.Reset();
+        _gestureRecognizer.SetGestures(settings.Gestures);
     }
 
     private static void RunAfter(int delayMs, Action action)

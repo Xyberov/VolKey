@@ -36,15 +36,15 @@ internal sealed class AudioVolumeService : IDisposable
         }
     }
 
-    public void Restore(VolumeState state)
+    /// <summary>Устанавливает уровень и/или режим «без звука»; null оставляет значение как есть.</summary>
+    public void Apply(float? level, bool? muted)
     {
         IAudioEndpointVolume? endpointVolume = null;
         try
         {
             endpointVolume = GetEndpointVolume();
-            endpointVolume.SetMasterVolumeLevelScalar(state.Level, Guid.Empty);
-            // «Громкость +» снимает режим без звука — возвращаем и его.
-            endpointVolume.SetMute(state.Muted, Guid.Empty);
+            if (level.HasValue) endpointVolume.SetMasterVolumeLevelScalar(level.Value, Guid.Empty);
+            if (muted.HasValue) endpointVolume.SetMute(muted.Value, Guid.Empty);
         }
         catch (Exception ex) when (ex is COMException or InvalidCastException)
         {

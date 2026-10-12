@@ -7,13 +7,15 @@
     <Nullable>enable</Nullable>
     <AssemblyName>VolKey</AssemblyName>
     <RootNamespace>VolKey</RootNamespace>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Product>VolKey</Product>
     <Company>Xyberov</Company>
     <ApplicationIcon>Assets\VolKey.ico</ApplicationIcon>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="VolKey.Tests" />
     <EmbeddedResource Include="Assets\VolKey.ico" LogicalName="VolKey.ico" />
   </ItemGroup>
 </Project>

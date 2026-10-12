@@ -19,11 +19,14 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Test
+        run: dotnet test -c Release
+
       - name: Publish exe
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
-          dotnet publish -c Release -p:PublishProfile=Installer -p:Version=$version
+          dotnet publish VolKey.csproj -c Release -p:PublishProfile=Installer -p:Version=$version
 
       - name: Build installer
         shell: pwsh
