@@ -78,18 +78,6 @@ Settings are stored in `%LOCALAPPDATA%\VolKey\settings.json`.
 
 > Closing the window doesn't quit VolKey — it keeps running in the background. To quit completely, choose **Quit** in the tray icon menu or **Quit VolKey** in the window.
 
-## Releasing
-
-1. Bump `Version` in `VolKey.csproj` and commit.
-2. Create a tag and push it to GitHub:
-
-   ```powershell
-   git tag v1.3.0
-   git push origin v1.3.0
-   ```
-
-GitHub Actions runs the tests, builds the portable exe and the installer, and publishes the release. The app version comes from the tag.
-
 ## Project structure
 
 ```text
