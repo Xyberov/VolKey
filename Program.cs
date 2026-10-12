@@ -18,6 +18,7 @@ internal static class Program
         }
 
         ApplicationConfiguration.Initialize();
+        Application.SetColorMode(SystemColorMode.System);
         var startMinimized = args.Contains(AutoStartService.MinimizedArgument, StringComparer.OrdinalIgnoreCase);
         Application.Run(new VolKeyApplicationContext(startMinimized));
     }

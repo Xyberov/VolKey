@@ -8,6 +8,7 @@ internal sealed class MainForm : Form
     private const string StopGlyph = "■";
 
     private readonly GestureRecorder _recorder;
+    private readonly MediaSessionService _mediaSession;
     private readonly Action _toggleEnabled;
     private readonly Action _applySettings;
     private readonly Action _exitApplication;
@@ -17,6 +18,7 @@ internal sealed class MainForm : Form
     private readonly CheckBox _autostartCheckBox = new() { AutoSize = true };
     private readonly CheckBox _restoreVolumeCheckBox = new() { AutoSize = true };
     private readonly CheckBox _notificationsCheckBox = new() { AutoSize = true };
+    private readonly CheckBox _fullscreenCheckBox = new() { AutoSize = true };
     private readonly Label _timeoutLabel = new() { AutoSize = true };
     private readonly NumericUpDown _timeoutInput = new();
     private readonly Label _languageLabel = new() { AutoSize = true };
@@ -33,6 +35,7 @@ internal sealed class MainForm : Form
     private readonly ToolStripMenuItem _openMenuItem = new();
     private readonly ToolStripMenuItem _toggleMenuItem = new();
     private readonly ToolStripMenuItem _quitMenuItem = new();
+    private readonly List<ToolStripItem> _gestureMenuItems = [];
     private readonly NotifyIcon _trayIcon;
     private readonly ToolTip _toolTip = new();
     private readonly Icon _enabledTrayIcon = AppIcons.Load(SystemInformation.SmallIconSize);
@@ -42,13 +45,16 @@ internal sealed class MainForm : Form
     private bool _allowClose;
     private bool _isInitializing = true;
     private bool _hiddenHintShown;
+    private DateTime _trayTooltipUpdatedAt;
 
     public AppSettings Settings { get; }
 
-    public MainForm(AppSettings settings, GestureRecorder recorder, Action toggleEnabled, Action applySettings, Action exitApplication)
+    public MainForm(AppSettings settings, GestureRecorder recorder, MediaSessionService mediaSession,
+        Action toggleEnabled, Action applySettings, Action exitApplication)
     {
         Settings = settings;
         _recorder = recorder;
+        _mediaSession = mediaSession;
         _toggleEnabled = toggleEnabled;
         _applySettings = applySettings;
         _exitApplication = exitApplication;
@@ -81,7 +87,7 @@ internal sealed class MainForm : Form
         _statusLabel.Font = new Font(Font, FontStyle.Bold);
         _statusLabel.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(10));
 
-        foreach (var checkBox in new[] { _enabledCheckBox, _autostartCheckBox, _restoreVolumeCheckBox, _notificationsCheckBox })
+        foreach (var checkBox in new[] { _enabledCheckBox, _autostartCheckBox, _restoreVolumeCheckBox, _notificationsCheckBox, _fullscreenCheckBox })
             checkBox.Margin = new Padding(Dpi(3), Dpi(3), Dpi(3), Dpi(5));
         _enabledCheckBox.Checked = Settings.Enabled;
         _enabledCheckBox.CheckedChanged += (_, _) =>
@@ -92,6 +98,7 @@ internal sealed class MainForm : Form
         BindCheckBox(_autostartCheckBox, Settings.StartWithWindows, value => Settings.StartWithWindows = value);
         BindCheckBox(_restoreVolumeCheckBox, Settings.RestoreVolumeAfterGesture, value => Settings.RestoreVolumeAfterGesture = value);
         BindCheckBox(_notificationsCheckBox, Settings.ShowNotifications, value => Settings.ShowNotifications = value);
+        BindCheckBox(_fullscreenCheckBox, Settings.IgnoreInFullscreen, value => Settings.IgnoreInFullscreen = value);
 
         _timeoutInput.Minimum = AppSettings.MinGestureTimeoutMs;
         _timeoutInput.Maximum = AppSettings.MaxGestureTimeoutMs;
@@ -118,9 +125,10 @@ internal sealed class MainForm : Form
         _gesturesHeading.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(4));
         _gesturesTable.Margin = Padding.Empty;
         _addGestureButton.Click += (_, _) => AddGesture();
-        _recordGestureButton.ForeColor = Color.Firebrick;
+        _recordGestureButton.ForeColor = Theme.Error;
         _recordGestureButton.Click += (_, _) => ToggleRecording(null, _recordGestureButton);
         _resetGesturesLink.Margin = new Padding(Dpi(10), Dpi(8), 0, 0);
+        _resetGesturesLink.LinkColor = _resetGesturesLink.ActiveLinkColor = Theme.Accent;
         _resetGesturesLink.LinkClicked += (_, _) => ResetGestures();
         var gestureButtonsRow = Row(_addGestureButton, _recordGestureButton, _resetGesturesLink);
         gestureButtonsRow.Margin = new Padding(0, Dpi(2), 0, Dpi(2));
@@ -137,7 +145,7 @@ internal sealed class MainForm : Form
         buttonsRow.Anchor = AnchorStyles.Right;
 
         layout.Controls.AddRange([titleRow, _descriptionLabel, _statusLabel, _enabledCheckBox, _autostartCheckBox,
-            _restoreVolumeCheckBox, _notificationsCheckBox, timeoutRow, languageRow, _gesturesHeading, _gesturesTable,
+            _restoreVolumeCheckBox, _notificationsCheckBox, _fullscreenCheckBox, timeoutRow, languageRow, _gesturesHeading, _gesturesTable,
             gestureButtonsRow, _gestureMessage, _gestureHint, gesturesSpacer, buttonsRow]);
         Controls.Add(layout);
         CancelButton = _hideButton;
@@ -148,6 +156,7 @@ internal sealed class MainForm : Form
         _quitMenuItem.Click += (_, _) => ExitFromButton();
         var menu = new ContextMenuStrip();
         menu.Items.AddRange([_openMenuItem, _toggleMenuItem, new ToolStripSeparator(), _quitMenuItem]);
+        menu.Opening += (_, _) => RefreshGestureMenuItems(menu);
 
         _trayIcon = new NotifyIcon
         {
@@ -160,6 +169,7 @@ internal sealed class MainForm : Form
         {
             if (e.Button == MouseButtons.Left) ShowWindow();
         };
+        _trayIcon.MouseMove += (_, _) => UpdateTrayTooltipAsync();
 
         _isInitializing = false;
         ApplyTexts();
@@ -169,15 +179,10 @@ internal sealed class MainForm : Form
     {
         _enabledCheckBox.Checked = Settings.Enabled;
         _statusLabel.Text = Strings.Status(Settings.Enabled);
-        _statusLabel.ForeColor = Settings.Enabled ? Color.ForestGreen : Color.Firebrick;
+        _statusLabel.ForeColor = Settings.Enabled ? Theme.Success : Theme.Error;
         _toggleMenuItem.Checked = Settings.Enabled;
         _trayIcon.Icon = Settings.Enabled ? _enabledTrayIcon : _disabledTrayIcon;
         _trayIcon.Text = Strings.TrayTooltip(Settings.Enabled);
-    }
-
-    public void ShowNotification(string message)
-    {
-        _trayIcon.ShowBalloonTip(800, "VolKey", message, ToolTipIcon.None);
     }
 
     public void ShowWindow()
@@ -234,6 +239,7 @@ internal sealed class MainForm : Form
         _autostartCheckBox.Text = Strings.StartWithWindows;
         _restoreVolumeCheckBox.Text = Strings.RestoreVolume;
         _notificationsCheckBox.Text = Strings.ShowNotifications;
+        _fullscreenCheckBox.Text = Strings.IgnoreInFullscreen;
         _timeoutLabel.Text = Strings.MaxPause;
         _languageLabel.Text = Strings.Language;
         _gesturesHeading.Text = Strings.Gestures;
@@ -260,6 +266,37 @@ internal sealed class MainForm : Form
         Strings.SetLanguage(language);
         _applySettings();
         ApplyTexts();
+    }
+
+    /// <summary>Подсказка значка показывает текущий трек; обновляем её, когда над значком мышь.</summary>
+    private async void UpdateTrayTooltipAsync()
+    {
+        if (DateTime.UtcNow - _trayTooltipUpdatedAt < TimeSpan.FromSeconds(1)) return;
+        _trayTooltipUpdatedAt = DateTime.UtcNow;
+        var track = await _mediaSession.GetCurrentTrackAsync();
+        if (IsDisposed) return;
+        var text = Strings.TrayTooltip(Settings.Enabled);
+        if (track is not null) text += $"\n{(track.IsPlaying ? "▶" : "⏸")} {track.Display}";
+        // Windows ограничивает подсказку значка 127 символами.
+        _trayIcon.Text = text.Length <= 127 ? text : text[..126] + "…";
+    }
+
+    private void RefreshGestureMenuItems(ContextMenuStrip menu)
+    {
+        foreach (var item in _gestureMenuItems)
+        {
+            menu.Items.Remove(item);
+            item.Dispose();
+        }
+        _gestureMenuItems.Clear();
+        if (Settings.Gestures.Count == 0) return;
+
+        _gestureMenuItems.Add(new ToolStripSeparator());
+        _gestureMenuItems.Add(new ToolStripMenuItem(Strings.TrayGestures) { Enabled = false, Font = new Font(menu.Font, FontStyle.Bold) });
+        _gestureMenuItems.AddRange(Settings.Gestures.Select(gesture =>
+            new ToolStripMenuItem($"{GestureSequence.Display(gesture.Sequence)}   →   {Strings.Action(gesture.Action)}") { Enabled = false }));
+        for (var i = 0; i < _gestureMenuItems.Count; i++)
+            menu.Items.Insert(menu.Items.IndexOf(_toggleMenuItem) + 1 + i, _gestureMenuItems[i]);
     }
 
     private void HideToTray()
@@ -296,7 +333,7 @@ internal sealed class MainForm : Form
             sequenceBox.SelectionChangeCommitted += (_, _) => ChangeSequence(binding, sequenceBox);
             var rowButtonSize = new Size(Dpi(30), sequenceBox.Height + Dpi(2));
 
-            var recordButton = new Button { Text = RecordGlyph, Size = rowButtonSize, Anchor = AnchorStyles.None, ForeColor = Color.Firebrick };
+            var recordButton = new Button { Text = RecordGlyph, Size = rowButtonSize, Anchor = AnchorStyles.None, ForeColor = Theme.Error };
             _toolTip.SetToolTip(recordButton, Strings.RecordSequence);
             recordButton.Click += (_, _) => ToggleRecording(binding, recordButton);
 
@@ -342,7 +379,7 @@ internal sealed class MainForm : Form
         if (IsAssignedToOther(sequence, binding))
         {
             sequenceBox.SelectedIndex = IndexOfSequence(binding.Sequence);
-            ShowGestureMessage(Strings.AlreadyAssigned(GestureSequence.Display(sequence)), Color.Firebrick);
+            ShowGestureMessage(Strings.AlreadyAssigned(GestureSequence.Display(sequence)), Theme.Error);
             return;
         }
         binding.Sequence = sequence;
@@ -362,7 +399,7 @@ internal sealed class MainForm : Form
         _recordingButton = button;
         button.Text = target is null ? $"{StopGlyph}  {Strings.StopRecording}" : StopGlyph;
         _toolTip.SetToolTip(button, Strings.StopRecording);
-        ShowGestureMessage(Strings.RecordingPrompt, SystemColors.HotTrack);
+        ShowGestureMessage(Strings.RecordingPrompt, Theme.Accent);
         _recorder.Start(Settings.GestureTimeoutMs);
     }
 
@@ -394,12 +431,12 @@ internal sealed class MainForm : Form
 
         if (!GestureSequence.IsValid(e.Sequence))
         {
-            ShowGestureMessage(Strings.InvalidRecording, Color.Firebrick);
+            ShowGestureMessage(Strings.InvalidRecording, Theme.Error);
             return;
         }
         if (IsAssignedToOther(e.Sequence, target))
         {
-            ShowGestureMessage(Strings.AlreadyAssigned(display), Color.Firebrick);
+            ShowGestureMessage(Strings.AlreadyAssigned(display), Theme.Error);
             return;
         }
 
@@ -409,7 +446,7 @@ internal sealed class MainForm : Form
             target.Sequence = e.Sequence;
         _applySettings();
         RebuildGestureRows();
-        ShowGestureMessage(Strings.Recorded(display), Color.ForestGreen);
+        ShowGestureMessage(Strings.Recorded(display), Theme.Success);
     }
 
     private void AddGesture()

@@ -8,11 +8,14 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
     private readonly AutoStartService _autoStartService = new();
     private readonly KeyboardHook _keyboardHook = new();
     private readonly AudioVolumeService _audioVolumeService = new();
+    private readonly MediaSessionService _mediaSessionService = new();
+    private readonly OsdWindow _osd = new();
     private readonly GestureRecognizer _gestureRecognizer;
     private readonly GestureRecorder _gestureRecorder = new();
     private readonly MainForm _mainForm;
     private readonly SynchronizationContext _uiContext;
     private readonly ShowWindowSignal _showWindowSignal;
+    private int _osdVersion;
 
     public VolKeyApplicationContext(bool startMinimized)
     {
@@ -22,13 +25,15 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
         Strings.SetLanguage(settings.Language);
 
         _gestureRecorder.Recorded += (_, e) => RestoreAfterPresses(e.VolumeBefore?.Level, e.VolumeBefore?.Muted);
-        _mainForm = new MainForm(settings, _gestureRecorder, ToggleEnabled, ApplySettings, ExitApplication);
+        _mainForm = new MainForm(settings, _gestureRecorder, _mediaSessionService, ToggleEnabled, ApplySettings, ExitApplication);
         _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         _gestureRecognizer = new GestureRecognizer(settings.GestureTimeoutMs, settings.Gestures);
         _gestureRecognizer.GestureRecognized += OnGestureRecognized;
         _keyboardHook.VolumeKeyPressed += OnVolumeKeyPressed;
         _keyboardHook.Start();
+        // Первое обращение к медиасессиям медленное — делаем его заранее, а не во время жеста.
+        _ = _mediaSessionService.GetCurrentTrackAsync();
 
         _showWindowSignal = new ShowWindowSignal(() => _uiContext.Post(_ => _mainForm.ShowWindow(), null));
         if (!startMinimized) _mainForm.ShowWindow();
@@ -37,7 +42,9 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
     private void OnVolumeKeyPressed(object? sender, VolumeKey key)
     {
         var recording = _gestureRecorder.IsRecording;
-        if (!recording && !_mainForm.Settings.Enabled) return;
+        var settings = _mainForm.Settings;
+        if (!recording && (!settings.Enabled || settings.IgnoreInFullscreen && FullscreenDetector.IsFullscreenAppActive()))
+            return;
 
         // Хук получает кнопку раньше, чем Windows изменяет громкость, поэтому уровень читаем здесь.
         // Всё остальное (отправку медиаклавиш, уведомления) выполняем уже после выхода из хука.
@@ -48,9 +55,13 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
             _uiContext.Post(_ => _gestureRecognizer.Register(key, volumeBefore), null);
     }
 
-    private void OnGestureRecognized(object? sender, GestureRecognizedEventArgs e)
+    private async void OnGestureRecognized(object? sender, GestureRecognizedEventArgs e)
     {
         var settings = _mainForm.Settings;
+        // Трек до команды нужен, чтобы плашка дождалась, когда плеер его сменит.
+        var trackBefore = settings.ShowNotifications && e.Action != GestureAction.ToggleMute
+            ? await _mediaSessionService.GetCurrentTrackAsync()
+            : null;
         MediaController.TrySend(e.Action);
 
         var restore = settings.RestoreVolumeAfterGesture;
@@ -65,12 +76,52 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
         RestoreAfterPresses(level, muted);
 
         if (settings.ShowNotifications)
+            await ShowOsdAsync(e.Action, trackBefore, muted);
+    }
+
+    private async Task ShowOsdAsync(GestureAction action, TrackInfo? before, bool? muted)
+    {
+        // Если за время ожидания плеера сработал следующий жест, старый результат не показываем.
+        var version = ++_osdVersion;
+        switch (action)
         {
-            _mainForm.ShowNotification(e.Action == GestureAction.ToggleMute && muted.HasValue
-                ? Strings.Muted(muted.Value)
-                : Strings.Action(e.Action));
+            case GestureAction.ToggleMute:
+                _osd.ShowMessage(muted == true ? OsdGlyph.Muted : OsdGlyph.Volume,
+                    muted.HasValue ? Strings.Muted(muted.Value) : Strings.Action(action));
+                return;
+
+            case GestureAction.PlayPause:
+            {
+                bool? willPlay = before is null ? null : !before.IsPlaying;
+                _osd.ShowMessage(PlaybackGlyph(willPlay), willPlay.HasValue ? Strings.Playback(willPlay.Value) : Strings.Action(action),
+                    before?.Display);
+                var after = await _mediaSessionService.WaitForChangeAsync(
+                    track => before is null || track.IsPlaying != before.IsPlaying, TimeSpan.FromSeconds(1));
+                if (after is not null && version == _osdVersion)
+                    _osd.ShowMessage(PlaybackGlyph(after.IsPlaying), Strings.Playback(after.IsPlaying), after.Display);
+                return;
+            }
+
+            default:
+            {
+                var glyph = action == GestureAction.NextTrack ? OsdGlyph.Next : OsdGlyph.Previous;
+                _osd.ShowMessage(glyph, Strings.Action(action));
+                var after = await _mediaSessionService.WaitForChangeAsync(
+                    track => before is null || !track.IsSameTrack(before), TimeSpan.FromSeconds(1.5));
+                if (after is null || version != _osdVersion) return;
+                var cover = await _mediaSessionService.GetCoverAsync();
+                if (version != _osdVersion)
+                {
+                    cover?.Dispose();
+                    return;
+                }
+                _osd.ShowMessage(glyph, after.Title, string.IsNullOrEmpty(after.Artist) ? Strings.Action(action) : after.Artist, cover);
+                return;
+            }
         }
     }
+
+    private static string PlaybackGlyph(bool? playing) => playing == false ? OsdGlyph.Pause : OsdGlyph.Play;
 
     private void RestoreAfterPresses(float? level, bool? muted)
     {
@@ -118,6 +169,7 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
         _gestureRecorder.Dispose();
         _audioVolumeService.Dispose();
         _mainForm.Dispose();
+        _osd.Dispose();
         ExitThread();
     }
 }

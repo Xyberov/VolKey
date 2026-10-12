@@ -22,7 +22,8 @@ internal static class Strings
     public static string EnableGestures => T("Включить обработку жестов", "Enable gestures");
     public static string StartWithWindows => T("Запускать вместе с Windows", "Start with Windows");
     public static string RestoreVolume => T("Возвращать громкость после жеста", "Restore volume after a gesture");
-    public static string ShowNotifications => T("Показывать уведомление о действии", "Show a notification for each action");
+    public static string ShowNotifications => T("Показывать подсказку на экране", "Show an on-screen popup");
+    public static string IgnoreInFullscreen => T("Не срабатывать в полноэкранных играх и видео", "Ignore gestures in full-screen games and videos");
     public static string MaxPause => T("Макс. пауза между нажатиями, мс:", "Max pause between presses, ms:");
     public static string Language => T("Язык:", "Language:");
 
@@ -53,6 +54,7 @@ internal static class Strings
     public static string TrayGesturesOn => T("Жесты включены", "Gestures on");
     public static string TrayQuit => T("Выйти", "Quit");
     public static string TrayTooltip(bool enabled) => enabled ? T("VolKey — жесты включены", "VolKey — gestures on") : T("VolKey — жесты выключены", "VolKey — gestures off");
+    public static string TrayGestures => T("Жесты", "Gestures");
     public static string StillRunning => T("Программа продолжает работать возле часов.", "VolKey keeps running in the system tray.");
 
     public static string Action(GestureAction action) => action switch
@@ -65,4 +67,5 @@ internal static class Strings
     };
 
     public static string Muted(bool muted) => muted ? T("Звук выключен", "Sound muted") : T("Звук включён", "Sound on");
+    public static string Playback(bool playing) => playing ? T("Воспроизведение", "Playing") : T("Пауза", "Paused");
 }

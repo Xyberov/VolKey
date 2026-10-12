@@ -10,7 +10,9 @@ internal sealed class AppSettings
     public bool Enabled { get; set; } = true;
     public bool StartWithWindows { get; set; }
     public bool RestoreVolumeAfterGesture { get; set; } = true;
+    /// <summary>Показывать плашку с действием и треком (имя свойства сохранено ради старых файлов настроек).</summary>
     public bool ShowNotifications { get; set; } = true;
+    public bool IgnoreInFullscreen { get; set; } = true;
     public int GestureTimeoutMs { get; set; } = 550;
     public UiLanguage Language { get; set; }
     public List<GestureBinding> Gestures { get; set; } = DefaultGestures();

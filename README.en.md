@@ -9,7 +9,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows_10%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 and 11">
-  <img src="https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 8">
+  <img src="https://img.shields.io/badge/.NET-10-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 8">
   <img src="https://img.shields.io/github/v/release/Xyberov/VolKey?style=for-the-badge" alt="Latest release">
 </p>
 
@@ -57,9 +57,12 @@ Single presses change the volume as usual, and holding a key counts as one press
 - Runs in the background — no need to keep the window open.
 - Works with any player that understands media keys: Spotify, browsers, Yandex Music, VK Music and more.
 - Custom combinations and actions, recorded straight from the volume keys.
-- Tray icon: click to open the settings; the menu toggles gestures and quits. The icon turns grey when gestures are off.
+- A popup at the top of the screen shows what happened: the new track's title, artist and cover, pause, or mute. It never piles up in the notification center and fades out on its own.
+- Stays out of your games: gestures are ignored while a full-screen app is open.
+- Tray icon: click to open the settings; the menu lists your gestures, toggles them and quits. The icon's tooltip shows the current track, and the icon turns grey when gestures are off.
 - Starts with Windows quietly, without showing the window.
 - Launching it again doesn't start a second copy — it opens the window of the running one.
+- Light and dark theme, following Windows.
 - Russian and English interface.
 
 ## Settings
@@ -69,7 +72,8 @@ Single presses change the volume as usual, and holding a key counts as one press
 | **Enable gestures** | Temporarily turns gesture handling on or off. |
 | **Start with Windows** | Launches VolKey when you sign in. |
 | **Restore volume after a gesture** | Undoes the volume change caused by the gesture's presses. |
-| **Show a notification for each action** | A short notification such as "Next track" or "Sound muted". |
+| **Show an on-screen popup** | A popup with the action and track, such as "Believer — Imagine Dragons" or "Sound muted". |
+| **Ignore gestures in full-screen games and videos** | While a full-screen app is open, gestures are ignored and the keys just change the volume. |
 | **Max pause between presses** | How long you can wait between neighbouring presses: 250–1500 ms, 550 ms by default. |
 | **Language** | System default, Russian or English. Switches instantly. |
 | **Gestures** | A "combination → action" table: add, record with the keys, edit, remove or restore defaults. |
@@ -85,6 +89,8 @@ VolKey/
 ├── Program.cs                  # Entry point, single-instance guard
 ├── VolKeyApplicationContext.cs # Wires services and the window, runs gesture actions
 ├── MainForm.cs                 # Settings window and tray icon
+├── OsdWindow.cs                # Popup with the action and track
+├── Theme.cs                    # Light and dark theme colors
 ├── Strings.cs                  # Russian and English UI text
 ├── Services/
 │   ├── KeyboardHook.cs          # Global volume key hook
@@ -93,6 +99,8 @@ VolKey/
 │   ├── GestureRecognizer.cs     # Press buffer and pause timer
 │   ├── GestureRecorder.cs       # Recording a combination from the volume keys
 │   ├── MediaController.cs       # Sending media keys to the player
+│   ├── MediaSessionService.cs   # Current track, cover and playback state
+│   ├── FullscreenDetector.cs    # Full-screen app detection
 │   ├── AudioVolumeService.cs    # Reading and restoring volume and mute
 │   ├── AppSettings.cs           # Settings and their validation
 │   ├── SettingsService.cs       # Reading and saving settings.json
