@@ -2,22 +2,32 @@ using System.Runtime.InteropServices;
 
 namespace VolKey.Services;
 
+/// <summary>Уровень и состояние «без звука» устройства вывода.</summary>
+internal readonly record struct VolumeState(float Level, bool Muted);
+
 /// <summary>Читает и восстанавливает громкость активного устройства вывода Windows.</summary>
-internal sealed class AudioVolumeService
+internal sealed class AudioVolumeService : IDisposable
 {
     private const int ClsctxAll = 23;
+    private IMMDeviceEnumerator? _enumerator;
 
-    public bool TryGetMasterVolume(out float volume)
+    /// <summary>Достаточно быстрый, чтобы вызываться из хука клавиатуры: перечислитель устройств создаётся один раз.</summary>
+    public bool TryGetState(out VolumeState state)
     {
-        volume = 0;
+        state = default;
         IAudioEndpointVolume? endpointVolume = null;
         try
         {
             endpointVolume = GetEndpointVolume();
-            return endpointVolume.GetMasterVolumeLevelScalar(out volume) >= 0;
+            if (endpointVolume.GetMasterVolumeLevelScalar(out var level) < 0 ||
+                endpointVolume.GetMute(out var muted) < 0)
+                return false;
+            state = new VolumeState(level, muted);
+            return true;
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or InvalidCastException)
         {
+            ResetEnumerator();
             return false;
         }
         finally
@@ -26,17 +36,20 @@ internal sealed class AudioVolumeService
         }
     }
 
-    public void RestoreMasterVolume(float volume)
+    public void Restore(VolumeState state)
     {
         IAudioEndpointVolume? endpointVolume = null;
         try
         {
             endpointVolume = GetEndpointVolume();
-            endpointVolume.SetMasterVolumeLevelScalar(volume, Guid.Empty);
+            endpointVolume.SetMasterVolumeLevelScalar(state.Level, Guid.Empty);
+            // «Громкость +» снимает режим без звука — возвращаем и его.
+            endpointVolume.SetMute(state.Muted, Guid.Empty);
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or InvalidCastException)
         {
             // При смене устройства воспроизведения восстановление можно пропустить.
+            ResetEnumerator();
         }
         finally
         {
@@ -44,23 +57,35 @@ internal sealed class AudioVolumeService
         }
     }
 
-    private static IAudioEndpointVolume GetEndpointVolume()
+    public void Dispose() => ResetEnumerator();
+
+    private IAudioEndpointVolume GetEndpointVolume()
     {
-        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+        _enumerator ??= (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
         IMMDevice? device = null;
-        object? endpoint = null;
         try
         {
-            Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out device));
+            // Устройство запрашиваем каждый раз: пользователь мог переключить вывод на другое.
+            ThrowIfFailed(_enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out device));
             var interfaceId = typeof(IAudioEndpointVolume).GUID;
-            Marshal.ThrowExceptionForHR(device.Activate(ref interfaceId, ClsctxAll, IntPtr.Zero, out endpoint));
+            ThrowIfFailed(device.Activate(ref interfaceId, ClsctxAll, IntPtr.Zero, out var endpoint));
             return (IAudioEndpointVolume)endpoint;
         }
         finally
         {
             if (device is not null) Marshal.ReleaseComObject(device);
-            Marshal.ReleaseComObject(enumerator);
         }
+    }
+
+    private void ResetEnumerator()
+    {
+        if (_enumerator is not null) Marshal.ReleaseComObject(_enumerator);
+        _enumerator = null;
+    }
+
+    private static void ThrowIfFailed(int hresult)
+    {
+        if (hresult < 0) throw new COMException(null, hresult);
     }
 
     private enum EDataFlow { eRender, eCapture, eAll }

@@ -3,15 +3,22 @@ using System.Runtime.InteropServices;
 
 namespace VolKey.Services;
 
+/// <summary>
+/// Глобальный хук кнопок громкости. Обработчик <see cref="VolumeKeyPressed"/> вызывается прямо из хука,
+/// поэтому должен работать быстро: Windows молча снимает хук, если он отвечает слишком долго.
+/// </summary>
 internal sealed class KeyboardHook : IDisposable
 {
     private const int WhKeyboardLl = 13;
     private const int WmKeyDown = 0x0100;
+    private const int WmKeyUp = 0x0101;
     private const int WmSysKeyDown = 0x0104;
+    private const int WmSysKeyUp = 0x0105;
     private const int VkVolumeDown = 0xAE;
     private const int VkVolumeUp = 0xAF;
     private IntPtr _hookId;
     private HookProc? _callback;
+    private VolumeKey? _heldKey;
     public event EventHandler<VolumeKey>? VolumeKeyPressed;
 
     public void Start()
@@ -25,11 +32,31 @@ internal sealed class KeyboardHook : IDisposable
 
     private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
     {
-        if (code >= 0 && ((int)wParam == WmKeyDown || (int)wParam == WmSysKeyDown))
+        if (code >= 0)
         {
-            var keyCode = Marshal.ReadInt32(lParam);
-            if (keyCode == VkVolumeUp) VolumeKeyPressed?.Invoke(this, VolumeKey.Up);
-            if (keyCode == VkVolumeDown) VolumeKeyPressed?.Invoke(this, VolumeKey.Down);
+            var key = Marshal.ReadInt32(lParam) switch
+            {
+                VkVolumeUp => VolumeKey.Up,
+                VkVolumeDown => VolumeKey.Down,
+                _ => (VolumeKey?)null
+            };
+            if (key.HasValue)
+            {
+                var message = (int)wParam;
+                if (message is WmKeyDown or WmSysKeyDown)
+                {
+                    // Удержание кнопки шлёт повторные WM_KEYDOWN — считаем его одним нажатием.
+                    if (_heldKey != key)
+                    {
+                        _heldKey = key;
+                        VolumeKeyPressed?.Invoke(this, key.Value);
+                    }
+                }
+                else if (message is WmKeyUp or WmSysKeyUp && _heldKey == key)
+                {
+                    _heldKey = null;
+                }
+            }
         }
         return CallNextHookEx(_hookId, code, wParam, lParam);
     }

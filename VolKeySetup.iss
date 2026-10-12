@@ -1,15 +1,16 @@
-; ==========================================================
+﻿; ==========================================================
 ; Inno Setup script for VolKey
 ; Компилируется в Inno Setup Compiler (https://jrsoftware.org/isinfo.php)
 ; ==========================================================
 
 #define MyAppName "VolKey"
-#define MyAppVersion "1.0.0"
+; Версия берётся из собранного exe (свойство Version в VolKey.csproj).
+#define MyAppVersion GetVersionNumbersString(AddBackslash(SourcePath) + "publish\VolKey.exe")
 #define MyAppPublisher "Xyberov"
 #define MyAppExeName "VolKey.exe"
 
 [Setup]
-AppId={{A1B2C3D4-5E6F-4A7B-8C9D-1E2F3A4B5C6D}}
+AppId={{DC0AAD60-5A52-4764-99E7-DC48B7CD099F}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -24,6 +25,13 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
+SetupIconFile=Assets\VolKey.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayName={#MyAppName}
+VersionInfoVersion={#MyAppVersion}
+; Совпадает с мьютексом в Program.cs: установщик попросит закрыть запущенный VolKey.
+AppMutex=VolKey.SingleInstance
+CloseApplications=yes
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -32,7 +40,7 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Дополнительные ярлыки:"; Flags: checkedonce
 
 [Files]
-; Укажи путь к опубликованному exe (результат dotnet publish)
+; Сначала соберите exe: dotnet publish -c Release -p:PublishProfile=Installer
 Source: "publish\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -42,5 +50,10 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
+[Registry]
+; Автозапуск включает сама программа, а удаляет запись — деинсталлятор.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "VolKey"; ValueType: none; Flags: uninsdeletevalue
+
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{localappdata}\VolKey"

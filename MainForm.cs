@@ -5,118 +5,130 @@ namespace VolKey;
 internal sealed class MainForm : Form
 {
     private readonly Action _toggleEnabled;
-    private readonly Action _saveSettings;
+    private readonly Action _applySettings;
     private readonly Action _exitApplication;
-    private readonly CheckBox _enabledCheckBox = new();
-    private readonly CheckBox _autostartCheckBox = new();
-    private readonly CheckBox _restoreVolumeCheckBox = new();
+    private readonly CheckBox _enabledCheckBox = new() { Text = "Включить обработку жестов", AutoSize = true };
+    private readonly CheckBox _autostartCheckBox = new() { Text = "Запускать вместе с Windows", AutoSize = true };
+    private readonly CheckBox _restoreVolumeCheckBox = new() { Text = "Возвращать громкость после жеста", AutoSize = true };
+    private readonly CheckBox _notificationsCheckBox = new() { Text = "Показывать уведомление о переключении", AutoSize = true };
     private readonly NumericUpDown _timeoutInput = new();
-    private readonly Label _statusLabel = new();
+    private readonly Label _statusLabel = new() { AutoSize = true };
+    private readonly ToolStripMenuItem _toggleMenuItem;
     private readonly NotifyIcon _trayIcon;
+    private readonly Icon _enabledTrayIcon = AppIcons.Load(SystemInformation.SmallIconSize);
+    private readonly Icon _disabledTrayIcon;
     private bool _allowClose;
     private bool _isInitializing = true;
+    private bool _hiddenHintShown;
 
     public AppSettings Settings { get; }
 
-    public MainForm(AppSettings settings, bool autostartEnabled, Action toggleEnabled, Action saveSettings, Action exitApplication)
+    public MainForm(AppSettings settings, Action toggleEnabled, Action applySettings, Action exitApplication)
     {
         Settings = settings;
-        Settings.StartWithWindows = autostartEnabled;
         _toggleEnabled = toggleEnabled;
-        _saveSettings = saveSettings;
+        _applySettings = applySettings;
         _exitApplication = exitApplication;
+        _disabledTrayIcon = AppIcons.CreateDisabled(_enabledTrayIcon);
 
         Text = "VolKey";
+        Icon = AppIcons.Load(SystemInformation.IconSize);
         StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
-        ClientSize = new Size(470, 370);
+        AutoSize = true;
+        AutoSizeMode = AutoSizeMode.GrowAndShrink;
         Font = new Font("Segoe UI", 10F);
+        Padding = new Padding(Dpi(22), Dpi(14), Dpi(22), Dpi(18));
 
-        var heading = new Label { Text = "VolKey", Font = new Font("Segoe UI", 20F, FontStyle.Bold), AutoSize = true, Location = new Point(25, 20) };
-        var description = new Label
+        var layout = new FlowLayoutPanel
         {
-            Text = "Управление треками жестами на кнопках громкости.",
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
             AutoSize = true,
-            Location = new Point(27, 60)
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
 
-        _enabledCheckBox.Text = "Включить обработку жестов";
-        _enabledCheckBox.AutoSize = true;
-        _enabledCheckBox.Location = new Point(28, 105);
+        var version = typeof(MainForm).Assembly.GetName().Version?.ToString(3);
+        var titleRow = Row(
+            new Label { Text = "VolKey", Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), AutoSize = true, Margin = Padding.Empty },
+            new Label { Text = $"v{version}", ForeColor = SystemColors.GrayText, AutoSize = true, Margin = new Padding(Dpi(4), Dpi(16), 0, 0) });
+        var description = new Label
+        {
+            Text = "Переключение треков жестами на кнопках громкости.",
+            AutoSize = true,
+            Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(8))
+        };
+        _statusLabel.Font = new Font(Font, FontStyle.Bold);
+        _statusLabel.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(10));
+
+        foreach (var checkBox in new[] { _enabledCheckBox, _autostartCheckBox, _restoreVolumeCheckBox, _notificationsCheckBox })
+            checkBox.Margin = new Padding(Dpi(3), Dpi(3), Dpi(3), Dpi(5));
         _enabledCheckBox.Checked = Settings.Enabled;
         _enabledCheckBox.CheckedChanged += (_, _) =>
         {
             if (!_isInitializing && _enabledCheckBox.Checked != Settings.Enabled)
                 _toggleEnabled();
         };
+        BindCheckBox(_autostartCheckBox, Settings.StartWithWindows, value => Settings.StartWithWindows = value);
+        BindCheckBox(_restoreVolumeCheckBox, Settings.RestoreVolumeAfterGesture, value => Settings.RestoreVolumeAfterGesture = value);
+        BindCheckBox(_notificationsCheckBox, Settings.ShowNotifications, value => Settings.ShowNotifications = value);
 
-        _statusLabel.AutoSize = true;
-        _statusLabel.Location = new Point(48, 135);
-
-        _autostartCheckBox.Text = "Запускать вместе с Windows";
-        _autostartCheckBox.AutoSize = true;
-        _autostartCheckBox.Location = new Point(28, 175);
-        _autostartCheckBox.Checked = Settings.StartWithWindows;
-        _autostartCheckBox.CheckedChanged += (_, _) =>
-        {
-            if (_isInitializing) return;
-            Settings.StartWithWindows = _autostartCheckBox.Checked;
-            _saveSettings();
-        };
-
-        _restoreVolumeCheckBox.Text = "Возвращать громкость после жеста";
-        _restoreVolumeCheckBox.AutoSize = true;
-        _restoreVolumeCheckBox.Location = new Point(28, 210);
-        _restoreVolumeCheckBox.Checked = Settings.RestoreVolumeAfterGesture;
-        _restoreVolumeCheckBox.CheckedChanged += (_, _) =>
-        {
-            if (_isInitializing) return;
-            Settings.RestoreVolumeAfterGesture = _restoreVolumeCheckBox.Checked;
-            _saveSettings();
-        };
-
-        var timeoutLabel = new Label { Text = "Пауза между нажатиями (мс):", AutoSize = true, Location = new Point(28, 250) };
-        _timeoutInput.Minimum = 250;
-        _timeoutInput.Maximum = 1500;
+        _timeoutInput.Minimum = AppSettings.MinGestureTimeoutMs;
+        _timeoutInput.Maximum = AppSettings.MaxGestureTimeoutMs;
         _timeoutInput.Increment = 50;
         _timeoutInput.Value = Settings.GestureTimeoutMs;
-        _timeoutInput.Location = new Point(270, 245);
-        _timeoutInput.Width = 90;
+        _timeoutInput.Width = Dpi(80);
         _timeoutInput.ValueChanged += (_, _) =>
         {
+            if (_isInitializing) return;
             Settings.GestureTimeoutMs = (int)_timeoutInput.Value;
-            _saveSettings();
+            _applySettings();
         };
+        var timeoutRow = Row(
+            new Label { Text = "Макс. пауза между нажатиями, мс:", AutoSize = true, Margin = new Padding(Dpi(3), Dpi(6), Dpi(6), 0) },
+            _timeoutInput);
+        timeoutRow.Margin = new Padding(0, Dpi(4), 0, Dpi(12));
 
-        var help = new Label
+        var gestures = new Label
         {
-            Text = "+  −  +  — следующий трек\n−  +  −  — предыдущий трек",
+            Text = "Громкость  +  −  +   →   следующий трек\nГромкость  −  +  −   →   предыдущий трек",
+            ForeColor = SystemColors.GrayText,
             AutoSize = true,
-            ForeColor = Color.DimGray,
-            Location = new Point(28, 290)
+            Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(14))
         };
-        var exitButton = new Button { Text = "Выйти из программы", Size = new Size(155, 34), Location = new Point(285, 315) };
+
+        var exitButton = new Button { Text = "Выйти из программы", AutoSize = true, Padding = new Padding(Dpi(6), Dpi(2), Dpi(6), Dpi(2)) };
         exitButton.Click += (_, _) => ExitFromButton();
+        var hideButton = new Button { Text = "Свернуть в трей", AutoSize = true, Padding = new Padding(Dpi(6), Dpi(2), Dpi(6), Dpi(2)) };
+        hideButton.Click += (_, _) => Close();
+        var buttonsRow = Row(exitButton, hideButton);
+        buttonsRow.FlowDirection = FlowDirection.RightToLeft;
+        buttonsRow.Anchor = AnchorStyles.Right;
 
-        Controls.AddRange([heading, description, _enabledCheckBox, _statusLabel, _autostartCheckBox, _restoreVolumeCheckBox, timeoutLabel, _timeoutInput, help, exitButton]);
+        layout.Controls.AddRange([titleRow, description, _statusLabel, _enabledCheckBox, _autostartCheckBox,
+            _restoreVolumeCheckBox, _notificationsCheckBox, timeoutRow, gestures, buttonsRow]);
+        Controls.Add(layout);
+        CancelButton = hideButton;
 
-        var menu = new ContextMenuStrip();
-        var toggleItem = new ToolStripMenuItem("Включить / выключить", null, (_, _) => _toggleEnabled());
-        var openItem = new ToolStripMenuItem("Открыть настройки", null, (_, _) => ShowWindow());
+        var openItem = new ToolStripMenuItem("Открыть VolKey", null, (_, _) => ShowWindow()) { Font = new Font(Font, FontStyle.Bold) };
+        _toggleMenuItem = new ToolStripMenuItem("Жесты включены", null, (_, _) => _toggleEnabled());
         var exitItem = new ToolStripMenuItem("Выйти", null, (_, _) => ExitFromButton());
-        menu.Items.AddRange([toggleItem, openItem, new ToolStripSeparator(), exitItem]);
+        var menu = new ContextMenuStrip();
+        menu.Items.AddRange([openItem, _toggleMenuItem, new ToolStripSeparator(), exitItem]);
 
         _trayIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = _enabledTrayIcon,
             Text = "VolKey",
             ContextMenuStrip = menu,
             Visible = true
         };
-        _trayIcon.DoubleClick += (_, _) => ShowWindow();
+        _trayIcon.MouseClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left) ShowWindow();
+        };
 
-        FormClosing += OnFormClosing;
         _isInitializing = false;
         RefreshState();
     }
@@ -126,33 +138,81 @@ internal sealed class MainForm : Form
         _enabledCheckBox.Checked = Settings.Enabled;
         _statusLabel.Text = Settings.Enabled ? "● Жесты включены" : "● Жесты выключены";
         _statusLabel.ForeColor = Settings.Enabled ? Color.ForestGreen : Color.Firebrick;
+        _toggleMenuItem.Checked = Settings.Enabled;
+        _trayIcon.Icon = Settings.Enabled ? _enabledTrayIcon : _disabledTrayIcon;
         _trayIcon.Text = Settings.Enabled ? "VolKey — жесты включены" : "VolKey — жесты выключены";
     }
 
     public void ShowNotification(string message)
     {
-        _trayIcon.ShowBalloonTip(800, "VolKey", message, ToolTipIcon.Info);
+        _trayIcon.ShowBalloonTip(800, "VolKey", message, ToolTipIcon.None);
     }
 
-    private void ShowWindow()
+    public void ShowWindow()
     {
         Show();
         WindowState = FormWindowState.Normal;
         Activate();
     }
 
-    private void OnFormClosing(object? sender, FormClosingEventArgs e)
+    protected override void OnResize(EventArgs e)
     {
-        if (_allowClose) return;
+        base.OnResize(e);
+        if (WindowState == FormWindowState.Minimized) HideToTray();
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        base.OnFormClosing(e);
+        // Крестик прячет окно в трей. Выход из системы и прочие причины закрытия не блокируем.
+        if (_allowClose || e.CloseReason != CloseReason.UserClosing) return;
         e.Cancel = true;
+        HideToTray();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+            _enabledTrayIcon.Dispose();
+            _disabledTrayIcon.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
+    private void HideToTray()
+    {
         Hide();
+        if (_hiddenHintShown) return;
+        _hiddenHintShown = true;
         _trayIcon.ShowBalloonTip(1200, "VolKey", "Программа продолжает работать возле часов.", ToolTipIcon.Info);
     }
+
+    private void BindCheckBox(CheckBox checkBox, bool value, Action<bool> setValue)
+    {
+        checkBox.Checked = value;
+        checkBox.CheckedChanged += (_, _) =>
+        {
+            if (_isInitializing) return;
+            setValue(checkBox.Checked);
+            _applySettings();
+        };
+    }
+
+    private static FlowLayoutPanel Row(params Control[] controls)
+    {
+        var row = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = Padding.Empty };
+        row.Controls.AddRange(controls);
+        return row;
+    }
+
+    private int Dpi(int value) => LogicalToDeviceUnits(value);
 
     private void ExitFromButton()
     {
         _allowClose = true;
-        _trayIcon.Visible = false;
         _exitApplication();
     }
 }

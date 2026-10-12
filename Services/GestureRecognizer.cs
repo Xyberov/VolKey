@@ -3,13 +3,23 @@ namespace VolKey.Services;
 internal enum VolumeKey { Up, Down }
 internal enum MediaCommand { Next, Previous }
 
+internal sealed class GestureRecognizedEventArgs(MediaCommand command, VolumeState? volumeBefore) : EventArgs
+{
+    public MediaCommand Command { get; } = command;
+
+    /// <summary>Громкость до первого нажатия жеста, если её удалось прочитать.</summary>
+    public VolumeState? VolumeBefore { get; } = volumeBefore;
+}
+
 internal sealed class GestureRecognizer : IDisposable
 {
-    private readonly List<VolumeKey> _keys = [];
+    private const int GestureLength = 3;
+    private readonly List<(VolumeKey Key, VolumeState? VolumeBefore)> _presses = [];
     private readonly System.Windows.Forms.Timer _timer = new();
+    public event EventHandler<GestureRecognizedEventArgs>? GestureRecognized;
+
+    /// <summary>Максимальная пауза между соседними нажатиями жеста.</summary>
     public int TimeoutMs { get => _timer.Interval; set => _timer.Interval = value; }
-    public event EventHandler<MediaCommand>? GestureRecognized;
-    public event EventHandler? GestureFinished;
 
     public GestureRecognizer(int timeoutMs)
     {
@@ -17,34 +27,35 @@ internal sealed class GestureRecognizer : IDisposable
         _timer.Tick += (_, _) => Reset();
     }
 
-    public void Register(VolumeKey key)
+    public void Register(VolumeKey key, VolumeState? volumeBefore)
     {
         _timer.Stop();
-        _keys.Add(key);
-        if (_keys.Count == 3)
+        _presses.Add((key, volumeBefore));
+        // Скользящее окно: при «+ + − +» жест найдётся в последних трёх нажатиях.
+        if (_presses.Count > GestureLength) _presses.RemoveAt(0);
+
+        if (_presses.Count == GestureLength && Match() is { } command)
         {
-            var command = _keys switch
-            {
-                [VolumeKey.Up, VolumeKey.Down, VolumeKey.Up] => MediaCommand.Next,
-                [VolumeKey.Down, VolumeKey.Up, VolumeKey.Down] => MediaCommand.Previous,
-                _ => (MediaCommand?)null
-            };
-            _timer.Stop();
-            _keys.Clear();
-            if (command.HasValue)
-                GestureRecognized?.Invoke(this, command.Value);
-            GestureFinished?.Invoke(this, EventArgs.Empty);
+            var volume = _presses[0].VolumeBefore;
+            _presses.Clear();
+            GestureRecognized?.Invoke(this, new GestureRecognizedEventArgs(command, volume));
             return;
         }
         _timer.Start();
     }
 
-    private void Reset()
+    public void Reset()
     {
         _timer.Stop();
-        _keys.Clear();
-        GestureFinished?.Invoke(this, EventArgs.Empty);
+        _presses.Clear();
     }
+
+    private MediaCommand? Match() => (_presses[0].Key, _presses[1].Key, _presses[2].Key) switch
+    {
+        (VolumeKey.Up, VolumeKey.Down, VolumeKey.Up) => MediaCommand.Next,
+        (VolumeKey.Down, VolumeKey.Up, VolumeKey.Down) => MediaCommand.Previous,
+        _ => null
+    };
 
     public void Dispose() => _timer.Dispose();
 }
