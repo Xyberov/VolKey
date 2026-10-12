@@ -32,6 +32,19 @@ public class SettingsServiceTests
         Assert.Equal(AppSettings.DefaultGestures().Count, settings.Gestures.Count);
     }
 
+    [Theory]
+    [InlineData("\"English\"", "English")]
+    [InlineData("\"Russian\"", "Russian")]
+    [InlineData("\"Klingon\"", "System")]
+    [InlineData("5", "System")]
+    public void ReadsLanguageLeniently(string json, string expected)
+    {
+        var settings = SettingsService.Parse($$"""{ "Language": {{json}}, "GestureTimeoutMs": 700 }""");
+
+        Assert.Equal(expected, settings.Language.ToString());
+        Assert.Equal(700, settings.GestureTimeoutMs);
+    }
+
     [Fact]
     public void BrokenJsonFallsBackToDefaults()
     {

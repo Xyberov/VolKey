@@ -4,43 +4,56 @@ namespace VolKey;
 
 internal sealed class MainForm : Form
 {
+    private const string RecordGlyph = "●";
+    private const string StopGlyph = "■";
+
+    private readonly GestureRecorder _recorder;
     private readonly Action _toggleEnabled;
     private readonly Action _applySettings;
     private readonly Action _exitApplication;
-    private readonly CheckBox _enabledCheckBox = new() { Text = "Включить обработку жестов", AutoSize = true };
-    private readonly CheckBox _autostartCheckBox = new() { Text = "Запускать вместе с Windows", AutoSize = true };
-    private readonly CheckBox _restoreVolumeCheckBox = new() { Text = "Возвращать громкость после жеста", AutoSize = true };
-    private readonly CheckBox _notificationsCheckBox = new() { Text = "Показывать уведомление о действии", AutoSize = true };
-    private readonly NumericUpDown _timeoutInput = new();
+    private readonly Label _descriptionLabel = new() { AutoSize = true };
     private readonly Label _statusLabel = new() { AutoSize = true };
-    private readonly TableLayoutPanel _gesturesTable = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 4 };
-    private readonly Button _addGestureButton = new() { Text = "Добавить жест", AutoSize = true };
-    private readonly Label _gestureMessage = new() { AutoSize = true, ForeColor = Color.Firebrick, Visible = false };
-    private readonly Label _gestureHint = new()
-    {
-        Text = "Комбинация, с которой начинается другая, срабатывает после паузы.",
-        AutoSize = true,
-        ForeColor = SystemColors.GrayText,
-        Visible = false
-    };
-    private readonly ToolStripMenuItem _toggleMenuItem;
+    private readonly CheckBox _enabledCheckBox = new() { AutoSize = true };
+    private readonly CheckBox _autostartCheckBox = new() { AutoSize = true };
+    private readonly CheckBox _restoreVolumeCheckBox = new() { AutoSize = true };
+    private readonly CheckBox _notificationsCheckBox = new() { AutoSize = true };
+    private readonly Label _timeoutLabel = new() { AutoSize = true };
+    private readonly NumericUpDown _timeoutInput = new();
+    private readonly Label _languageLabel = new() { AutoSize = true };
+    private readonly ComboBox _languageBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly Label _gesturesHeading = new() { AutoSize = true };
+    private readonly TableLayoutPanel _gesturesTable = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 5 };
+    private readonly Button _addGestureButton = new() { AutoSize = true };
+    private readonly Button _recordGestureButton = new() { AutoSize = true };
+    private readonly LinkLabel _resetGesturesLink = new() { AutoSize = true };
+    private readonly Label _gestureMessage = new() { AutoSize = true, Visible = false };
+    private readonly Label _gestureHint = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Visible = false };
+    private readonly Button _hideButton = new() { AutoSize = true };
+    private readonly Button _quitButton = new() { AutoSize = true };
+    private readonly ToolStripMenuItem _openMenuItem = new();
+    private readonly ToolStripMenuItem _toggleMenuItem = new();
+    private readonly ToolStripMenuItem _quitMenuItem = new();
     private readonly NotifyIcon _trayIcon;
     private readonly ToolTip _toolTip = new();
     private readonly Icon _enabledTrayIcon = AppIcons.Load(SystemInformation.SmallIconSize);
     private readonly Icon _disabledTrayIcon;
+    private Button? _recordingButton;
+    private GestureBinding? _recordingTarget;
     private bool _allowClose;
     private bool _isInitializing = true;
     private bool _hiddenHintShown;
 
     public AppSettings Settings { get; }
 
-    public MainForm(AppSettings settings, Action toggleEnabled, Action applySettings, Action exitApplication)
+    public MainForm(AppSettings settings, GestureRecorder recorder, Action toggleEnabled, Action applySettings, Action exitApplication)
     {
         Settings = settings;
+        _recorder = recorder;
         _toggleEnabled = toggleEnabled;
         _applySettings = applySettings;
         _exitApplication = exitApplication;
         _disabledTrayIcon = AppIcons.CreateDisabled(_enabledTrayIcon);
+        _recorder.Recorded += OnGestureRecorded;
 
         Text = "VolKey";
         Icon = AppIcons.Load(SystemInformation.IconSize);
@@ -64,12 +77,7 @@ internal sealed class MainForm : Form
         var titleRow = Row(
             new Label { Text = "VolKey", Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), AutoSize = true, Margin = Padding.Empty },
             new Label { Text = $"v{version}", ForeColor = SystemColors.GrayText, AutoSize = true, Margin = new Padding(Dpi(4), Dpi(16), 0, 0) });
-        var description = new Label
-        {
-            Text = "Управление музыкой жестами на кнопках громкости.",
-            AutoSize = true,
-            Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(8))
-        };
+        _descriptionLabel.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(8));
         _statusLabel.Font = new Font(Font, FontStyle.Bold);
         _statusLabel.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(10));
 
@@ -96,42 +104,50 @@ internal sealed class MainForm : Form
             Settings.GestureTimeoutMs = (int)_timeoutInput.Value;
             _applySettings();
         };
-        var timeoutRow = Row(
-            new Label { Text = "Макс. пауза между нажатиями, мс:", AutoSize = true, Margin = new Padding(Dpi(3), Dpi(6), Dpi(6), 0) },
-            _timeoutInput);
-        timeoutRow.Margin = new Padding(0, Dpi(4), 0, Dpi(12));
+        _timeoutLabel.Margin = new Padding(Dpi(3), Dpi(6), Dpi(6), 0);
+        var timeoutRow = Row(_timeoutLabel, _timeoutInput);
+        timeoutRow.Margin = new Padding(0, Dpi(4), 0, Dpi(2));
 
-        var gesturesHeading = new Label { Text = "Жесты", Font = new Font(Font, FontStyle.Bold), AutoSize = true, Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(4)) };
+        _languageBox.Width = Dpi(150);
+        _languageBox.SelectionChangeCommitted += (_, _) => ChangeLanguage(((LanguageItem)_languageBox.SelectedItem!).Language);
+        _languageLabel.Margin = new Padding(Dpi(3), Dpi(6), Dpi(6), 0);
+        var languageRow = Row(_languageLabel, _languageBox);
+        languageRow.Margin = new Padding(0, Dpi(2), 0, Dpi(12));
+
+        _gesturesHeading.Font = new Font(Font, FontStyle.Bold);
+        _gesturesHeading.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(4));
         _gesturesTable.Margin = Padding.Empty;
         _addGestureButton.Click += (_, _) => AddGesture();
-        var resetGesturesLink = new LinkLabel { Text = "Вернуть стандартные", AutoSize = true, Margin = new Padding(Dpi(10), Dpi(8), 0, 0) };
-        resetGesturesLink.LinkClicked += (_, _) => ResetGestures();
-        var gestureButtonsRow = Row(_addGestureButton, resetGesturesLink);
+        _recordGestureButton.ForeColor = Color.Firebrick;
+        _recordGestureButton.Click += (_, _) => ToggleRecording(null, _recordGestureButton);
+        _resetGesturesLink.Margin = new Padding(Dpi(10), Dpi(8), 0, 0);
+        _resetGesturesLink.LinkClicked += (_, _) => ResetGestures();
+        var gestureButtonsRow = Row(_addGestureButton, _recordGestureButton, _resetGesturesLink);
         gestureButtonsRow.Margin = new Padding(0, Dpi(2), 0, Dpi(2));
         _gestureMessage.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(2));
         _gestureHint.Margin = new Padding(Dpi(3), 0, Dpi(3), Dpi(2));
         var gesturesSpacer = new Panel { Height = Dpi(10), Width = 1, Margin = Padding.Empty };
-        RebuildGestureRows();
 
-        var exitButton = new Button { Text = "Выйти из программы", AutoSize = true, Padding = new Padding(Dpi(6), Dpi(2), Dpi(6), Dpi(2)) };
-        exitButton.Click += (_, _) => ExitFromButton();
-        var hideButton = new Button { Text = "Свернуть в трей", AutoSize = true, Padding = new Padding(Dpi(6), Dpi(2), Dpi(6), Dpi(2)) };
-        hideButton.Click += (_, _) => Close();
-        var buttonsRow = Row(exitButton, hideButton);
+        _quitButton.Padding = new Padding(Dpi(6), Dpi(2), Dpi(6), Dpi(2));
+        _quitButton.Click += (_, _) => ExitFromButton();
+        _hideButton.Padding = new Padding(Dpi(6), Dpi(2), Dpi(6), Dpi(2));
+        _hideButton.Click += (_, _) => Close();
+        var buttonsRow = Row(_quitButton, _hideButton);
         buttonsRow.FlowDirection = FlowDirection.RightToLeft;
         buttonsRow.Anchor = AnchorStyles.Right;
 
-        layout.Controls.AddRange([titleRow, description, _statusLabel, _enabledCheckBox, _autostartCheckBox,
-            _restoreVolumeCheckBox, _notificationsCheckBox, timeoutRow, gesturesHeading, _gesturesTable,
+        layout.Controls.AddRange([titleRow, _descriptionLabel, _statusLabel, _enabledCheckBox, _autostartCheckBox,
+            _restoreVolumeCheckBox, _notificationsCheckBox, timeoutRow, languageRow, _gesturesHeading, _gesturesTable,
             gestureButtonsRow, _gestureMessage, _gestureHint, gesturesSpacer, buttonsRow]);
         Controls.Add(layout);
-        CancelButton = hideButton;
+        CancelButton = _hideButton;
 
-        var openItem = new ToolStripMenuItem("Открыть VolKey", null, (_, _) => ShowWindow()) { Font = new Font(Font, FontStyle.Bold) };
-        _toggleMenuItem = new ToolStripMenuItem("Жесты включены", null, (_, _) => _toggleEnabled());
-        var exitItem = new ToolStripMenuItem("Выйти", null, (_, _) => ExitFromButton());
+        _openMenuItem.Font = new Font(Font, FontStyle.Bold);
+        _openMenuItem.Click += (_, _) => ShowWindow();
+        _toggleMenuItem.Click += (_, _) => _toggleEnabled();
+        _quitMenuItem.Click += (_, _) => ExitFromButton();
         var menu = new ContextMenuStrip();
-        menu.Items.AddRange([openItem, _toggleMenuItem, new ToolStripSeparator(), exitItem]);
+        menu.Items.AddRange([_openMenuItem, _toggleMenuItem, new ToolStripSeparator(), _quitMenuItem]);
 
         _trayIcon = new NotifyIcon
         {
@@ -146,17 +162,17 @@ internal sealed class MainForm : Form
         };
 
         _isInitializing = false;
-        RefreshState();
+        ApplyTexts();
     }
 
     public void RefreshState()
     {
         _enabledCheckBox.Checked = Settings.Enabled;
-        _statusLabel.Text = Settings.Enabled ? "● Жесты включены" : "● Жесты выключены";
+        _statusLabel.Text = Strings.Status(Settings.Enabled);
         _statusLabel.ForeColor = Settings.Enabled ? Color.ForestGreen : Color.Firebrick;
         _toggleMenuItem.Checked = Settings.Enabled;
         _trayIcon.Icon = Settings.Enabled ? _enabledTrayIcon : _disabledTrayIcon;
-        _trayIcon.Text = Settings.Enabled ? "VolKey — жесты включены" : "VolKey — жесты выключены";
+        _trayIcon.Text = Strings.TrayTooltip(Settings.Enabled);
     }
 
     public void ShowNotification(string message)
@@ -169,6 +185,17 @@ internal sealed class MainForm : Form
         Show();
         WindowState = FormWindowState.Normal;
         Activate();
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        // Esc во время записи отменяет её, а не прячет окно.
+        if (keyData == Keys.Escape && _recorder.IsRecording)
+        {
+            CancelRecording();
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     protected override void OnResize(EventArgs e)
@@ -190,6 +217,7 @@ internal sealed class MainForm : Form
     {
         if (disposing)
         {
+            _recorder.Recorded -= OnGestureRecorded;
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             _toolTip.Dispose();
@@ -199,16 +227,53 @@ internal sealed class MainForm : Form
         base.Dispose(disposing);
     }
 
+    private void ApplyTexts()
+    {
+        _descriptionLabel.Text = Strings.Description;
+        _enabledCheckBox.Text = Strings.EnableGestures;
+        _autostartCheckBox.Text = Strings.StartWithWindows;
+        _restoreVolumeCheckBox.Text = Strings.RestoreVolume;
+        _notificationsCheckBox.Text = Strings.ShowNotifications;
+        _timeoutLabel.Text = Strings.MaxPause;
+        _languageLabel.Text = Strings.Language;
+        _gesturesHeading.Text = Strings.Gestures;
+        _addGestureButton.Text = Strings.AddGesture;
+        _resetGesturesLink.Text = Strings.ResetGestures;
+        _gestureHint.Text = Strings.PrefixHint;
+        _hideButton.Text = Strings.HideToTray;
+        _quitButton.Text = Strings.Quit;
+        _openMenuItem.Text = Strings.TrayOpen;
+        _toggleMenuItem.Text = Strings.TrayGesturesOn;
+        _quitMenuItem.Text = Strings.TrayQuit;
+
+        _languageBox.Items.Clear();
+        _languageBox.Items.AddRange(Enum.GetValues<UiLanguage>().Select(language => new LanguageItem(language)).ToArray<object>());
+        _languageBox.SelectedIndex = (int)Settings.Language;
+
+        RefreshState();
+        RebuildGestureRows();
+    }
+
+    private void ChangeLanguage(UiLanguage language)
+    {
+        Settings.Language = language;
+        Strings.SetLanguage(language);
+        _applySettings();
+        ApplyTexts();
+    }
+
     private void HideToTray()
     {
+        CancelRecording();
         Hide();
         if (_hiddenHintShown) return;
         _hiddenHintShown = true;
-        _trayIcon.ShowBalloonTip(1200, "VolKey", "Программа продолжает работать возле часов.", ToolTipIcon.Info);
+        _trayIcon.ShowBalloonTip(1200, "VolKey", Strings.StillRunning, ToolTipIcon.Info);
     }
 
     private void RebuildGestureRows()
     {
+        CancelRecording();
         _gesturesTable.SuspendLayout();
         foreach (var control in _gesturesTable.Controls.Cast<Control>().ToList()) control.Dispose();
         _gesturesTable.RowStyles.Clear();
@@ -216,9 +281,9 @@ internal sealed class MainForm : Form
 
         if (Settings.Gestures.Count == 0)
         {
-            var empty = new Label { Text = "Жестов нет — добавьте первый.", AutoSize = true, ForeColor = SystemColors.GrayText };
+            var empty = new Label { Text = Strings.NoGestures, AutoSize = true, ForeColor = SystemColors.GrayText };
             _gesturesTable.Controls.Add(empty, 0, 0);
-            _gesturesTable.SetColumnSpan(empty, 4);
+            _gesturesTable.SetColumnSpan(empty, _gesturesTable.ColumnCount);
         }
 
         for (var row = 0; row < Settings.Gestures.Count; row++)
@@ -229,6 +294,11 @@ internal sealed class MainForm : Form
             sequenceBox.Items.AddRange(GestureSequence.All.Select(sequence => new SequenceItem(sequence)).ToArray<object>());
             sequenceBox.SelectedIndex = IndexOfSequence(binding.Sequence);
             sequenceBox.SelectionChangeCommitted += (_, _) => ChangeSequence(binding, sequenceBox);
+            var rowButtonSize = new Size(Dpi(30), sequenceBox.Height + Dpi(2));
+
+            var recordButton = new Button { Text = RecordGlyph, Size = rowButtonSize, Anchor = AnchorStyles.None, ForeColor = Color.Firebrick };
+            _toolTip.SetToolTip(recordButton, Strings.RecordSequence);
+            recordButton.Click += (_, _) => ToggleRecording(binding, recordButton);
 
             var arrow = new Label { Text = "→", AutoSize = true, Anchor = AnchorStyles.None, ForeColor = SystemColors.GrayText };
 
@@ -241,8 +311,8 @@ internal sealed class MainForm : Form
                 _applySettings();
             };
 
-            var removeButton = new Button { Text = "✕", Size = new Size(Dpi(30), sequenceBox.Height + Dpi(2)), Anchor = AnchorStyles.None };
-            _toolTip.SetToolTip(removeButton, "Удалить жест");
+            var removeButton = new Button { Text = "✕", Size = rowButtonSize, Anchor = AnchorStyles.None };
+            _toolTip.SetToolTip(removeButton, Strings.RemoveGesture);
             removeButton.Click += (_, _) =>
             {
                 Settings.Gestures.Remove(binding);
@@ -252,39 +322,101 @@ internal sealed class MainForm : Form
             };
 
             _gesturesTable.Controls.Add(sequenceBox, 0, row);
-            _gesturesTable.Controls.Add(arrow, 1, row);
-            _gesturesTable.Controls.Add(actionBox, 2, row);
-            _gesturesTable.Controls.Add(removeButton, 3, row);
+            _gesturesTable.Controls.Add(recordButton, 1, row);
+            _gesturesTable.Controls.Add(arrow, 2, row);
+            _gesturesTable.Controls.Add(actionBox, 3, row);
+            _gesturesTable.Controls.Add(removeButton, 4, row);
         }
 
         _gesturesTable.ResumeLayout();
-        _addGestureButton.Enabled = Settings.Gestures.Count < GestureSequence.All.Count;
-        _gestureMessage.Visible = false;
+        var canAdd = Settings.Gestures.Count < GestureSequence.All.Count;
+        _addGestureButton.Enabled = canAdd;
+        _recordGestureButton.Enabled = canAdd;
+        HideGestureMessage();
         UpdateGestureHint();
     }
 
     private void ChangeSequence(GestureBinding binding, ComboBox sequenceBox)
     {
         var sequence = ((SequenceItem)sequenceBox.SelectedItem!).Sequence;
-        if (Settings.Gestures.Any(other => other != binding && other.Sequence == sequence))
+        if (IsAssignedToOther(sequence, binding))
         {
             sequenceBox.SelectedIndex = IndexOfSequence(binding.Sequence);
-            _gestureMessage.Text = $"Комбинация «{GestureSequence.Display(sequence)}» уже назначена.";
-            _gestureMessage.Visible = true;
+            ShowGestureMessage(Strings.AlreadyAssigned(GestureSequence.Display(sequence)), Color.Firebrick);
             return;
         }
         binding.Sequence = sequence;
-        _gestureMessage.Visible = false;
+        HideGestureMessage();
         UpdateGestureHint();
         _applySettings();
     }
 
+    /// <param name="target">Жест, которому записывается комбинация; null — записать новый жест.</param>
+    private void ToggleRecording(GestureBinding? target, Button button)
+    {
+        var wasThisButton = _recordingButton == button;
+        CancelRecording();
+        if (wasThisButton) return;
+
+        _recordingTarget = target;
+        _recordingButton = button;
+        button.Text = target is null ? $"{StopGlyph}  {Strings.StopRecording}" : StopGlyph;
+        _toolTip.SetToolTip(button, Strings.StopRecording);
+        ShowGestureMessage(Strings.RecordingPrompt, SystemColors.HotTrack);
+        _recorder.Start(Settings.GestureTimeoutMs);
+    }
+
+    private void CancelRecording()
+    {
+        _recorder.Cancel();
+        ResetRecordingButton();
+        if (_gestureMessage.Text == Strings.RecordingPrompt) HideGestureMessage();
+    }
+
+    private void ResetRecordingButton()
+    {
+        if (_recordingButton is { IsDisposed: false } button && button != _recordGestureButton)
+        {
+            button.Text = RecordGlyph;
+            _toolTip.SetToolTip(button, Strings.RecordSequence);
+        }
+        _recordGestureButton.Text = $"{RecordGlyph}  {Strings.RecordGesture}";
+        _toolTip.SetToolTip(_recordGestureButton, null);
+        _recordingButton = null;
+        _recordingTarget = null;
+    }
+
+    private void OnGestureRecorded(object? sender, GestureRecordedEventArgs e)
+    {
+        var target = _recordingTarget;
+        ResetRecordingButton();
+        var display = GestureSequence.Display(e.Sequence);
+
+        if (!GestureSequence.IsValid(e.Sequence))
+        {
+            ShowGestureMessage(Strings.InvalidRecording, Color.Firebrick);
+            return;
+        }
+        if (IsAssignedToOther(e.Sequence, target))
+        {
+            ShowGestureMessage(Strings.AlreadyAssigned(display), Color.Firebrick);
+            return;
+        }
+
+        if (target is null)
+            Settings.Gestures.Add(new GestureBinding(e.Sequence, NextFreeAction()));
+        else
+            target.Sequence = e.Sequence;
+        _applySettings();
+        RebuildGestureRows();
+        ShowGestureMessage(Strings.Recorded(display), Color.ForestGreen);
+    }
+
     private void AddGesture()
     {
-        var sequence = GestureSequence.All.FirstOrDefault(candidate => Settings.Gestures.All(g => g.Sequence != candidate));
+        var sequence = GestureSequence.All.FirstOrDefault(candidate => !IsAssignedToOther(candidate, null));
         if (sequence is null) return;
-        var action = GestureActions.All.FirstOrDefault(candidate => Settings.Gestures.All(g => g.Action != candidate), GestureAction.PlayPause);
-        Settings.Gestures.Add(new GestureBinding(sequence, action));
+        Settings.Gestures.Add(new GestureBinding(sequence, NextFreeAction()));
         _applySettings();
         RebuildGestureRows();
     }
@@ -294,6 +426,25 @@ internal sealed class MainForm : Form
         Settings.Gestures = AppSettings.DefaultGestures();
         _applySettings();
         RebuildGestureRows();
+    }
+
+    private GestureAction NextFreeAction() =>
+        GestureActions.All.FirstOrDefault(candidate => Settings.Gestures.All(g => g.Action != candidate), GestureAction.PlayPause);
+
+    private bool IsAssignedToOther(string sequence, GestureBinding? binding) =>
+        Settings.Gestures.Any(other => other != binding && other.Sequence == sequence);
+
+    private void ShowGestureMessage(string text, Color color)
+    {
+        _gestureMessage.Text = text;
+        _gestureMessage.ForeColor = color;
+        _gestureMessage.Visible = true;
+    }
+
+    private void HideGestureMessage()
+    {
+        _gestureMessage.Visible = false;
+        _gestureMessage.Text = "";
     }
 
     private void UpdateGestureHint()
@@ -330,7 +481,12 @@ internal sealed class MainForm : Form
 
     private sealed record ActionItem(GestureAction Action)
     {
-        public override string ToString() => GestureActions.DisplayName(Action);
+        public override string ToString() => Strings.Action(Action);
+    }
+
+    private sealed record LanguageItem(UiLanguage Language)
+    {
+        public override string ToString() => Strings.LanguageName(Language);
     }
 
     private int Dpi(int value) => LogicalToDeviceUnits(value);

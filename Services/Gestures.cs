@@ -7,15 +7,6 @@ internal enum GestureAction { NextTrack, PreviousTrack, PlayPause, ToggleMute }
 internal static class GestureActions
 {
     public static readonly GestureAction[] All = Enum.GetValues<GestureAction>();
-
-    public static string DisplayName(GestureAction action) => action switch
-    {
-        GestureAction.NextTrack => "Следующий трек",
-        GestureAction.PreviousTrack => "Предыдущий трек",
-        GestureAction.PlayPause => "Пауза / воспроизведение",
-        GestureAction.ToggleMute => "Выключить / включить звук",
-        _ => action.ToString()
-    };
 }
 
 /// <summary>Комбинация кнопок в виде строки из «+» и «-» (например, "+-+") и назначенное ей действие.</summary>

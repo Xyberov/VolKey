@@ -9,6 +9,7 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
     private readonly KeyboardHook _keyboardHook = new();
     private readonly AudioVolumeService _audioVolumeService = new();
     private readonly GestureRecognizer _gestureRecognizer;
+    private readonly GestureRecorder _gestureRecorder = new();
     private readonly MainForm _mainForm;
     private readonly SynchronizationContext _uiContext;
     private readonly ShowWindowSignal _showWindowSignal;
@@ -18,8 +19,10 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
         var settings = _settingsService.Load();
         settings.StartWithWindows = _autoStartService.IsEnabled();
         _autoStartService.UpgradeCommand();
+        Strings.SetLanguage(settings.Language);
 
-        _mainForm = new MainForm(settings, ToggleEnabled, ApplySettings, ExitApplication);
+        _gestureRecorder.Recorded += (_, e) => RestoreAfterPresses(e.VolumeBefore?.Level, e.VolumeBefore?.Muted);
+        _mainForm = new MainForm(settings, _gestureRecorder, ToggleEnabled, ApplySettings, ExitApplication);
         _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         _gestureRecognizer = new GestureRecognizer(settings.GestureTimeoutMs, settings.Gestures);
@@ -33,12 +36,16 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
 
     private void OnVolumeKeyPressed(object? sender, VolumeKey key)
     {
-        if (!_mainForm.Settings.Enabled) return;
+        var recording = _gestureRecorder.IsRecording;
+        if (!recording && !_mainForm.Settings.Enabled) return;
 
         // Хук получает кнопку раньше, чем Windows изменяет громкость, поэтому уровень читаем здесь.
         // Всё остальное (отправку медиаклавиш, уведомления) выполняем уже после выхода из хука.
         VolumeState? volumeBefore = _audioVolumeService.TryGetState(out var state) ? state : null;
-        _uiContext.Post(_ => _gestureRecognizer.Register(key, volumeBefore), null);
+        if (recording)
+            _uiContext.Post(_ => _gestureRecorder.Register(key, volumeBefore), null);
+        else
+            _uiContext.Post(_ => _gestureRecognizer.Register(key, volumeBefore), null);
     }
 
     private void OnGestureRecognized(object? sender, GestureRecognizedEventArgs e)
@@ -55,20 +62,23 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
             var before = e.VolumeBefore ?? (_audioVolumeService.TryGetState(out var current) ? current : null);
             muted = before.HasValue ? !before.Value.Muted : null;
         }
-        if (level.HasValue || muted.HasValue)
-        {
-            // Даём системе закончить обработку нажатий жеста и возвращаем уровень.
-            // Повтор страхует от случаев, когда Windows применила последнее нажатие с опозданием.
-            RunAfter(80, () => _audioVolumeService.Apply(level, muted));
-            RunAfter(250, () => _audioVolumeService.Apply(level, muted));
-        }
+        RestoreAfterPresses(level, muted);
 
         if (settings.ShowNotifications)
         {
             _mainForm.ShowNotification(e.Action == GestureAction.ToggleMute && muted.HasValue
-                ? muted.Value ? "Звук выключен" : "Звук включён"
-                : GestureActions.DisplayName(e.Action));
+                ? Strings.Muted(muted.Value)
+                : Strings.Action(e.Action));
         }
+    }
+
+    private void RestoreAfterPresses(float? level, bool? muted)
+    {
+        if (!level.HasValue && !muted.HasValue) return;
+        // Даём системе закончить обработку нажатий и возвращаем уровень.
+        // Повтор страхует от случаев, когда Windows применила последнее нажатие с опозданием.
+        RunAfter(80, () => _audioVolumeService.Apply(level, muted));
+        RunAfter(250, () => _audioVolumeService.Apply(level, muted));
     }
 
     private void ToggleEnabled()
@@ -105,6 +115,7 @@ internal sealed class VolKeyApplicationContext : ApplicationContext
         _keyboardHook.Dispose();
         _showWindowSignal.Dispose();
         _gestureRecognizer.Dispose();
+        _gestureRecorder.Dispose();
         _audioVolumeService.Dispose();
         _mainForm.Dispose();
         ExitThread();

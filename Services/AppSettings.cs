@@ -1,5 +1,7 @@
 namespace VolKey.Services;
 
+internal enum UiLanguage { System, Russian, English }
+
 internal sealed class AppSettings
 {
     public const int MinGestureTimeoutMs = 250;
@@ -10,6 +12,7 @@ internal sealed class AppSettings
     public bool RestoreVolumeAfterGesture { get; set; } = true;
     public bool ShowNotifications { get; set; } = true;
     public int GestureTimeoutMs { get; set; } = 550;
+    public UiLanguage Language { get; set; }
     public List<GestureBinding> Gestures { get; set; } = DefaultGestures();
 
     public static List<GestureBinding> DefaultGestures() =>
@@ -22,6 +25,7 @@ internal sealed class AppSettings
     public AppSettings Normalize()
     {
         GestureTimeoutMs = Math.Clamp(GestureTimeoutMs, MinGestureTimeoutMs, MaxGestureTimeoutMs);
+        if (!Enum.IsDefined(Language)) Language = UiLanguage.System;
         Gestures = (Gestures ?? DefaultGestures())
             .Where(gesture => gesture is not null && GestureSequence.IsValid(gesture.Sequence) && Enum.IsDefined(gesture.Action))
             .DistinctBy(gesture => gesture.Sequence)
